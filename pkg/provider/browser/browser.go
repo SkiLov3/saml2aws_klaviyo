@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"regexp"
 
+	//need to fix reference here
+	"github.com/pkg/browser"
 	"github.com/playwright-community/playwright-go"
 	"github.com/sirupsen/logrus"
 	"github.com/versent/saml2aws/v2/pkg/cfg"
@@ -17,67 +19,33 @@ var logger = logrus.WithField("provider", "browser")
 // Client client for browser based Identity Provider
 type Client struct {
 	Headless bool
-	// Setup alternative directory to download playwright browsers to
-	BrowserDriverDir string
 }
 
 // New create new browser based client
 func New(idpAccount *cfg.IDPAccount) (*Client, error) {
 	return &Client{
-		Headless:         idpAccount.Headless,
-		BrowserDriverDir: idpAccount.BrowserDriverDir,
+		Headless: idpAccount.Headless,
 	}, nil
 }
 
 func (cl *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error) {
-	runOptions := playwright.RunOptions{}
-	if cl.BrowserDriverDir != "" {
-		runOptions.DriverDirectory = cl.BrowserDriverDir
+	// Validate loginDetails
+	if err := cl.Validate(loginDetails); err != nil {
+		return "", err
 	}
 
-	// Optionally download browser drivers if specified
-	if loginDetails.DownloadBrowser {
-		err := playwright.Install(&runOptions)
-		if err != nil {
-			return "", err
-		}
-	}
+	logger.WithField("URL", loginDetails.URL).Info("opening system default browser")
 
-	pw, err := playwright.Run(&runOptions)
+	// Open the URL in the system's default browser
+	err := browser.OpenURL(loginDetails.URL)
 	if err != nil {
 		return "", err
 	}
 
-	// TODO: provide some overrides for this window
-	launchOptions := playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(cl.Headless),
-	}
+	// TODO: Implement logic to retrieve SAMLResponse from the opened browser.
 
-	// currently using Chromium as it is widely supported for Identity providers
-	//
-	// this is a sandboxed browser window so password managers and addons are separate
-	browser, err := pw.Chromium.Launch(launchOptions)
-	if err != nil {
-		return "", err
-	}
-
-	page, err := browser.NewPage()
-	if err != nil {
-		return "", err
-	}
-
-	defer func() {
-		logger.Info("clean up browser")
-		if err := browser.Close(); err != nil {
-			logger.Info("Error when closing browser", err)
-		}
-		if err := pw.Stop(); err != nil {
-			logger.Info("Error when stopping pm", err)
-		}
-	}()
-
-	return getSAMLResponse(page, loginDetails)
-}
+	return "", nil
+} //-nik stopped here
 
 var getSAMLResponse = func(page playwright.Page, loginDetails *creds.LoginDetails) (string, error) {
 	logger.WithField("URL", loginDetails.URL).Info("opening browser")
